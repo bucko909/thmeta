@@ -1,12 +1,18 @@
 #!/usr/bin/python
-# -*- coding: utf8 -*-
+# -*- coding: utf-8 -*-
 
 import os
 import os.path
 import re
 import urllib2
+import sys
+import entities
+reload(sys)
+sys.setdefaultencoding('utf-8')
 
 import sqlalchemy
+
+from model import *
 
 PAGES = "pages"
 DATA = "data"
@@ -20,47 +26,19 @@ class ParseException(Exception):
 class MaybeBadType(ParseException):
 	pass
 
-def get_circle(name=None, url=None):
-	if name and url:
-		if url in Circle.cache_url and name not in Circle.cache_url[url].names:
-			warn(u"Circle url %s, points to names %s and %s" % (url, Circle.cache_url[url].names, name))
-		if name in Circle.cache_name and url not in Circle.cache_name[name].urls:
-			warn(u"Circle name %s from urls %s and %s" % (name, Circle.cache_name[name].urls, url))
-	if name in Circle.cache_name:
-		self = Circle.cache_name[name]
-	elif url in Circle.cache_url:
-		self = Circle.cache_url[url]
-	else:
-		self = Circle()
-		Circle.cache_list.append(self)
-	if name and name not in self.names:
-		self.names.append(name)
-		Circle.cache_name[name] = self
-	if url and url not in self.urls:
-		self.urls.append(url)
-		Circle.cache_url[url] = self
-class Circle:
-	cache_name = dict()
-	cache_url = dict()
-	cache_list = list()
-	def __init__(self):
-		self.names = list()
-		self.urls = list()
-
-
 class logger:
 	stack = []
 	def __init__(self, f):
 		self.__f__ = f
 	def __call__(self, *args, **kwargs):
-		logger.stack += [ "%s(%s)" % (self.__f__.__name__, ", ".join(["%r" % v for v in args] + ["%s=%r" % (k, v) for (k, v) in kwargs.items() ])) ]
+		logger.stack += [ u"%s(%s)" % (self.__f__.__name__, u", ".join([u"%s" % v for v in args] + [u"%s=%s" % (k, v) for (k, v) in kwargs.items() ])) ]
 		try:
 			return self.__f__(*args, **kwargs)
 		except NotAPage, e:
 			raise
 		except Exception, e:
 			stack()
-			print "exception:%r" % e
+			print u"exception:%r" % e
 			import traceback
 			print traceback.format_exc()
 		finally:
@@ -96,6 +74,8 @@ class fallback:
 			fallback.read_urls[args[0]] = True
 			return ret
 
+
+
 def stack():
 	t = ''
 	for s in logger.stack:
@@ -112,6 +92,58 @@ def log(msg):
 	print stack(),
 	print u"log:%s" % msg
 
+def get_page(page_no):
+	candidates = session.query(Atwiki).filter(Atwiki.page_no == page_no).all()
+	if candidates:
+		return candidates[0]
+	page = Atwiki(page_no)
+	session.add(page)
+	return page
+
+names_cls = { Circle: CircleName, Album: AlbumName, Event: EventName }
+def get(cls, name=None, page_no=None, url=None):
+	name_cls = names_cls[cls]
+	if url:
+		page_no = url_page_no(url)
+	if page_no:
+		page = get_page(page_no)
+
+	if page_no and name:
+		candidates = session.query(cls).join(Atwiki).filter(or_(cls.names.any(name_cls.name == name), cls.pages.any(Atwiki.id == page.id))).all()
+	elif page_no:
+		candidates = session.query(cls).filter(cls.pages.contains(page)).all()
+	else:
+		candidates = session.query(cls).filter(cls.names.any(name_cls.name == name)).all()
+
+	if len(candidates) == 1:
+		obj = candidates[0]
+	elif candidates:
+		err(u"%s / %s does not uniquely define a obj" % (name, page_no))
+		return
+	else:
+		obj = cls()
+		session.add(obj)
+	
+	if page_no and page not in obj.pages:
+		if obj.pages:
+			warn(obj.names)
+			warn(u"Adding page %s to %s with pages %s" % (page, obj, [(o, o.circle, o.album, o.event) for o in obj.pages]))
+		obj.pages.append(page)
+	add_name(obj, name)
+	return obj
+
+def add_name(obj, name):
+	if not filter(lambda x: x.name == name, obj.names):
+		if obj.names:
+			log(u"Adding name %s to %s" % (name, obj))
+		obj.names.append(names_cls[obj.__class__](name))
+
+def url_page_no(url):
+	m = re.match("http://www16.atwiki.jp/toho/pages/(\d+).html", url)
+	if m:
+		return int(m.group(1))
+	else:
+		return None
 
 @logger
 def fetch_page(givenurl):
@@ -148,43 +180,57 @@ def get_main(page):
 album_url_re = re.compile('(<li>).*<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>(?:[^\\(<\n]+\\(([^\\)<\n]+)\\)</li>)?')
 @fallback
 @logger
-def read_circle(url, name=None):
+def read_circle(url, name=None, event=None):
 	#log("Circle: %s (%s)" % (name, url))
-	dirname = "%s/%s" % (DATA, name.replace("/", "__"))
-	if not os.path.exists(dirname):
-		#os.path.mkdir(dirname)
-		pass
-	album_cache = dirname + "/albums.txt"
-	if os.path.exists(album_cache) and False:
-		albums = [ album.split("|||") for album in open(album_cache, "r").read().split("\n") ]
+	title, to_parse = get_main(fetch_page(url))
+	albums = []
+	if not name:
+		name = title
+	circle = get(Circle, name=name, url=url)
+	if name != title:
+		add_name(circle, title)
+
+	for (li, url, album_name, alternative) in album_url_re.findall(to_parse):
+		if li:
+			t = 'album'
+		else:
+			t = 'maybe_album'
+		albums += [(t, url, album_name, alternative)]
+	if not albums:
+		raise MaybeBadType("Empty circle")
+
+	if event and not filter(lambda x: x == event, circle.events):
+		# We'll get to the albums later
+		circle.events.append(event)
 	else:
-		title, to_parse = get_main(fetch_page(url))
-		albums = []
-		for (li, url, album_name, alternative) in album_url_re.findall(to_parse):
-			if li:
-				t = 'album'
-			else:
-				t = 'maybe_album'
-			albums += [(t, url, album_name, alternative)]
-		if not albums:
-			raise MaybeBadType("Empty circle")
-		if not name:
-			name = title
-		elif name != title:
-			warn("Circle has name %s, but page has title %s" % (name, title))
-		#open(album_cache, "w").write("\n".join(["|||".join(album) for album in albums]))
-	
-	for (t, url, album_name, alternative) in albums:
-		read_album(url, name=album_name, circle_name=name)
+		for (t, url, album_name, alternative) in albums:
+			read_album(url, name=album_name, circle=circle)
+
+	return circle
 
 get_tables_re = re.compile("<table>(.*?)</table>", re.DOTALL)
-get_album_title_re = re.compile('<h2 id="id_.*?">(.*?)</h2>')
-get_album_circle_re = re.compile(u'(?:サ[ー－]クル名?|ｻｰｸﾙ)[：:] ?<a href="(.*?)".*?>(.*?)</a>')
+get_album_title_re = re.compile('<h[23] id="id_.*?">(.*?)</h[23]>')
+get_album_circle_re = re.compile(u'(?:サ[ー－]クル名?|ｻｰｸﾙ)[：:]+ ?<a href="(.*?)".*?>(.*?)</a>')
 @fallback
 @logger
-def read_album(url, name=None, circle_name=None):
+def read_album(url, name=None, circle=None, event=None):
 	#log("Album: %s (%s)" % (name, url))
 	title, to_parse = get_main(fetch_page(url))
+	match = get_album_circle_re.search(to_parse)
+	if match:
+		m_c_url = entities.unescape(match.group(1))
+		c_page_no = url_page_no(m_c_url)
+		m_c_name = entities.unescape(match.group(2))
+		if circle:
+			add_name(circle, match.group(2))
+			if c_page_no not in circle.page_nos():
+				raise ParseException(u"Circle %s has urls %s and %s" % (circle, circle.page_nos(), c_page_no))
+				add_url(circle, m_c_url)
+		else:
+			circle = get(Circle, name=match.group(2), url=match.group(1))
+	else:
+		raise MaybeBadType("No circle for this album (though handed %s)" % circle)
+
 	match = get_album_title_re.search(to_parse)
 	if match and name and name != match.group(1):
 		warn(u"Album name was %s, but page said %s" % (name, match.group(1)))
@@ -193,15 +239,7 @@ def read_album(url, name=None, circle_name=None):
 		names = [match.group(1)]
 	else:
 		raise MaybeBadType("No title for this album (though handed %s)" % name)
-
-	match = get_album_circle_re.search(to_parse)
-	if match and circle_name and circle_name != match.group(2):
-		warn(u"Album circle was %s, but page said %s" %(circle_name, match.group(2)))
-		circle = get_circle(name=circle_name, url=match.group(1))
-	elif not match:
-		raise MaybeBadType("No circle for this album (though handed %s)" % circle_name)
-	else:
-		circle = get_circle(name=match.group(2), url=match.group(1))
+	album = get(Album, name=names[0], url=url)
 
 	found_track = False
 	for table in get_tables_re.findall(to_parse):
@@ -209,7 +247,7 @@ def read_album(url, name=None, circle_name=None):
 		names, data = parse_table(table)
 		if names[0] != 'Number':
 			raise MaybeBadType("First column of album is not track number")
-		if names[1] != 'Track Name':
+		if names[1] != 'Track Name' and names[1] != 'Track name':
 			raise MaybeBadType("Second column of album is not track name")
 		# Confident, now.
 		if not data:
@@ -229,7 +267,7 @@ def read_album(url, name=None, circle_name=None):
 				tracks.append([row_data])
 			old_val = row[0]
 		found_track = True
-		print "Album", names, circle, tracks
+		#print u"Album %s" %((names, circle, tracks),)
 	if not found_track:
 		raise MaybeBadType("Can't find any tracks in %s - %s" % (circle, name))
 
@@ -270,12 +308,6 @@ def parse_table(table):
 				row.append(None)
 		data.append(row)
 	return data[0], data[1:]
-
-@fallback
-@logger
-def read_event(url, name=None):
-	pass
-
 
 @logger
 def read_circle_list_list(url):
@@ -324,8 +356,9 @@ def read_event_list(url):
 
 @fallback
 @logger
-def read_event(url, name=None):
+def read_event(url, name=None, date=None):
 	title, page = get_main(fetch_page(url))
+	event = get(Event, name=name, url=url)
 	read = False
 	for table in get_tables_re.findall(page):
 		names, data = parse_table(table)
@@ -338,15 +371,14 @@ def read_event(url, name=None):
 				res = event_url_re.match(row[0])
 				if res:
 					url, circle_name = res.groups()
-					#print "circle", circle_name
-					#read_circle(url, name=circle_name)
+					circle = read_circle(url, name=circle_name, event=event)
 				else:
+					circle = None
 					pass
 				res = event_url_re.match(row[1])
 				if res:
 					url, album_name = res.groups()
-					#print "album", album_name
-					#read_album(url, name=album_name, circle_name=circle_name)
+					read_album(url, name=album_name, circle=circle, event=event)
 				else:
 					pass
 		read = True
@@ -366,6 +398,6 @@ if not os.path.exists(PAGES):
 if not os.path.exists(DATA):
 	os.path.mkdir(DATA)
 
-db = sqlalchemy.create_engine('postgresql+psycopg2://touhou_meta')
+session = Session()
 #read_circle_list_list("http://www16.atwiki.jp/toho/pages/11.html")
 read_event_list("http://www16.atwiki.jp/toho/pages/490.html")
