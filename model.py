@@ -170,6 +170,65 @@ class Atwiki(Base):
 		return u"<Atwiki %i>" % self.page_no
 Index('atwiki_page_no_key', Atwiki.page_no, unique=True)
 
+
+class UTN(Base):
+	__tablename__ = 'utn'
+	id = Column(Integer, Sequence('utn_id_seq'), primary_key=True)
+	url = Column(UnicodeText, nullable=False)
+	type = Column(Enum('CIRCLE_LIST_LIST', 'CIRCLE_LIST', 'CIRCLE_ALBUM_LIST_LIST', 'CIRCLE_ALBUM_LIST', 'EVENT_LIST', 'EVENT', 'CIRCLE', 'ALBUM', name='utn_type_enum'), nullable=False)
+	name = Column(UnicodeText)
+	data = Column(UnicodeText)
+	def __init__(self, url, type, name):
+		self.url = url
+		self.type = type
+		self.name = name
+	def __repr__(self):
+		return u"<UTN %s, %s, %s>" % (url, type, name)
+
+class UTNWitness(Base):
+	__tablename__ = 'utn_witness'
+	id = Column(Integer, Sequence('utn_witness_id_seq'), primary_key=True)
+	utn_id = Column(Integer, ForeignKey(UTN.id), nullable=False)
+	utn = relationship(UTN, backref='witnesses')
+	url = Column(UnicodeText, nullable=False)
+	def __init__(self, url):
+		self.url = url
+
+class UTNLink(Base):
+	__tablename__ = 'utn_link'
+	id = Column(Integer, Sequence('utn_link_id_seq'), primary_key=True)
+	from_id = Column(Integer, ForeignKey(UTN.id), nullable=False)
+	to_id = Column(Integer, ForeignKey(UTN.id), nullable=False)
+	def __init__(self, _from, _to):
+		self._from = _from
+		self._to = _to
+UTNLink._from = relationship(UTN, primaryjoin=UTNLink.from_id == UTN.id, backref='links_from')
+UTNLink._to = relationship(UTN, primaryjoin=UTNLink.to_id == UTN.id, backref='links_to')
+
+class UTNLinkWitness(Base):
+	__tablename__ = 'utn_link_witness'
+	id = Column(Integer, Sequence('utn_link_witness_id_seq'), primary_key=True)
+	utn_link_id = Column(Integer, ForeignKey(UTNLink.id), nullable=False)
+	utn_link = relationship(UTNLink, backref='witnesses')
+	url = Column(UnicodeText, nullable=False)
+	def __init__(self, url):
+		self.url = url
+
+class UTNGroupMember(Base):
+	__tablename__ = 'utn_group_member'
+	id = Column(Integer, Sequence('utn_group_member_id_seq'), primary_key=True)
+	member_id = Column(Integer, ForeignKey('utn.id'), nullable=False)
+	group_id = Column(Integer, ForeignKey('utn_group.id'), nullable=False)
+	why = Column(UnicodeText, nullable=False)
+
+class UTNGroup(Base):
+	__tablename__ = 'utn_group'
+	id = Column(Integer, Sequence('utn_group_id_seq'), primary_key=True)
+	canonical_id = Column(Integer, ForeignKey(UTN.id), nullable=False)
+	members = relationship(UTN, secondary=UTNGroupMember.__table__, backref=backref("group", uselist=False))
+	member_secs = relationship(UTNGroupMember, backref='group')
+UTNGroup.canonical = relationship(UTN, primaryjoin=UTNGroup.canonical_id == UTN.id, foreign_keys=[UTNGroup.canonical_id])
+
 Base.metadata.bind = create_engine('postgresql+psycopg2:///touhou_meta', echo=False)
 Base.metadata.create_all()
 Session = sessionmaker(bind=Base.metadata.bind)
