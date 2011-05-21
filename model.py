@@ -23,7 +23,7 @@ class Event(Base):
 class EventName(Base):
 	__tablename__ = 'event_name'
 	id = Column(Integer, Sequence('event_name_id_seq'), primary_key=True)
-	event_id = Column(Integer, ForeignKey('event.id'), nullable=False)
+	event_id = Column(Integer, ForeignKey('event.id', ondelete='cascade'), nullable=False)
 	event = relationship(Event, backref=backref('names', order_by=id))
 	name = Column(UnicodeText, nullable=False)
 	canonical = Column(Boolean, nullable=False)
@@ -53,7 +53,7 @@ class Circle(Base):
 class CircleName(Base):
 	__tablename__ = 'circle_name'
 	id = Column(Integer, Sequence('circle_name_id_seq'), primary_key=True)
-	circle_id = Column(Integer, ForeignKey('circle.id'), nullable=False)
+	circle_id = Column(Integer, ForeignKey('circle.id', ondelete='cascade'), nullable=False)
 	circle = relationship(Circle, backref=backref('names', order_by=id))
 	canonical = Column(Boolean, nullable=False)
 	name = Column(UnicodeText, nullable=False)
@@ -81,7 +81,7 @@ class Album(Base):
 class AlbumName(Base):
 	__tablename__ = 'album_name'
 	id = Column(Integer, Sequence('album_name_id_seq'), primary_key=True)
-	album_id = Column(Integer, ForeignKey('album.id'), nullable=False)
+	album_id = Column(Integer, ForeignKey('album.id', ondelete='cascade'), nullable=False)
 	album = relationship(Album, backref=backref('names', order_by=id))
 	name = Column(UnicodeText, nullable=False)
 	canonical = Column(Boolean, nullable=False)
@@ -95,9 +95,9 @@ Index('album_name_name_key', AlbumName.name, AlbumName.id, unique=True)
 class CircleAttendance(Base):
 	__tablename__ = 'circle_attendance'
 	id = Column(Integer, Sequence('circle_attendance_id_seq'), primary_key=True)
-	circle_id = Column(Integer, ForeignKey('circle.id'), nullable=False)
+	circle_id = Column(Integer, ForeignKey('circle.id', ondelete='cascade'), nullable=False)
 	circle = relationship(Circle, backref='attendances')
-	event_id = Column(Integer, ForeignKey(Event.id))
+	event_id = Column(Integer, ForeignKey(Event.id, ondelete='cascade'))
 	event = relationship(Event, backref='attendances')
 Index('circle_attendance_key', CircleAttendance.circle_id, CircleAttendance.event_id, unique=True)
 Circle.events = relationship(Event, secondary=CircleAttendance.__table__, backref='circles')
@@ -105,9 +105,9 @@ Circle.events = relationship(Event, secondary=CircleAttendance.__table__, backre
 class AlbumRelease(Base):
 	__tablename__ = 'album_release'
 	id = Column(Integer, Sequence('album_release_id_seq'), primary_key=True)
-	circle_attendance_id = Column(Integer, ForeignKey('circle_attendance.id'), nullable=False)
+	circle_attendance_id = Column(Integer, ForeignKey('circle_attendance.id', ondelete='cascade'), nullable=False)
 	circle_attendance = relationship(CircleAttendance, backref=backref('releases', order_by=id))
-	album_id = Column(Integer, ForeignKey('album.id'), nullable=False)
+	album_id = Column(Integer, ForeignKey('album.id', ondelete='cascade'), nullable=False)
 	album = relationship(Album, backref=backref('releases', order_by=id))
 	def __init__(self, circle_attendance, album):
 		self.circle_attendance = circle_attendance
@@ -118,7 +118,7 @@ class Track(Base):
 	__tablename__ = 'track'
 	id = Column(Integer, Sequence('track_id_seq'), primary_key=True)
 	track_number = Column(Integer, nullable=False)
-	album_id = Column(Integer, ForeignKey('album.id'), nullable=False)
+	album_id = Column(Integer, ForeignKey('album.id', ondelete='cascade'), nullable=False)
 	album = relationship(Album, backref=backref('tracks', order_by=id))
 	def __init__(self, track_number, album):
 		self.track_number = track_number
@@ -128,7 +128,7 @@ Index('track_key', Track.track_number, Track.album_id, unique=True)
 class TrackName(Base):
 	__tablename__ = 'track_name'
 	id = Column(Integer, Sequence('track_name_id_seq'), primary_key=True)
-	track_id = Column(Integer, ForeignKey('track.id'), nullable=False)
+	track_id = Column(Integer, ForeignKey('track.id', ondelete='cascade'), nullable=False)
 	track = relationship(Track, backref=backref('names', order_by=id))
 	name = Column(UnicodeText, nullable=False)
 	canonical = Column(Boolean, nullable=False)
@@ -142,7 +142,7 @@ Index('track_name_name_key', TrackName.name, TrackName.id, unique=True)
 class TrackProperty(Base):
 	__tablename__ = 'track_property'
 	id = Column(Integer, Sequence('track_property_id_seq'), primary_key=True)
-	track_id = Column(Integer, ForeignKey('track.id'), nullable=False)
+	track_id = Column(Integer, ForeignKey('track.id', ondelete='cascade'), nullable=False)
 	track = relationship(Track, backref=backref('properties', order_by=id))
 	name = Column(UnicodeText, nullable=False)
 	value = Column(UnicodeText, nullable=False)
@@ -157,11 +157,11 @@ class Atwiki(Base):
 	__tablename__ = 'atwiki'
 	id = Column(Integer, Sequence('atwiki_id_seq'), primary_key=True)
 	page_no = Column(Integer, nullable=False)
-	event_id = Column(Integer, ForeignKey('event.id'))
+	event_id = Column(Integer, ForeignKey('event.id', ondelete='cascade'))
 	event = relationship(Event, backref=backref('pages', order_by=id))
-	circle_id = Column(Integer, ForeignKey('circle.id'))
+	circle_id = Column(Integer, ForeignKey('circle.id', ondelete='cascade'))
 	circle = relationship(Circle, backref=backref('pages', order_by=id))
-	album_id = Column(Integer, ForeignKey('album.id'))
+	album_id = Column(Integer, ForeignKey('album.id', ondelete='cascade'))
 	album = relationship(Album, backref=backref('pages', order_by=id))
 	other = Column(UnicodeText)
 	def __init__(self, page_no):
@@ -175,7 +175,7 @@ class UTN(Base):
 	__tablename__ = 'utn'
 	id = Column(Integer, Sequence('utn_id_seq'), primary_key=True)
 	url = Column(UnicodeText, nullable=False)
-	type = Column(Enum('CIRCLE_LIST_LIST', 'CIRCLE_LIST', 'CIRCLE_ALBUM_LIST_LIST', 'CIRCLE_ALBUM_LIST', 'EVENT_LIST', 'EVENT', 'CIRCLE', 'ALBUM', name='utn_type_enum'), nullable=False)
+	type = Column(Enum('RECENT', 'CIRCLE_LIST_LIST', 'CIRCLE_LIST', 'CIRCLE_ALBUM_LIST_LIST', 'CIRCLE_ALBUM_LIST', 'EVENT_LIST', 'EVENT', 'CIRCLE', 'ALBUM', name='utn_type_enum'), nullable=False)
 	name = Column(UnicodeText)
 	data = Column(UnicodeText)
 	def __init__(self, url, type, name):
@@ -183,51 +183,70 @@ class UTN(Base):
 		self.type = type
 		self.name = name
 	def __repr__(self):
-		return u"<UTN %s, %s, %s>" % (url, type, name)
+		return u"<UTN %s, %s, %s>" % (self.url, self.type, self.name)
+Index("utn_idx", UTN.url, UTN.type, UTN.name, unique=True)
 
 class UTNWitness(Base):
 	__tablename__ = 'utn_witness'
 	id = Column(Integer, Sequence('utn_witness_id_seq'), primary_key=True)
-	utn_id = Column(Integer, ForeignKey(UTN.id), nullable=False)
+	utn_id = Column(Integer, ForeignKey(UTN.id, ondelete='cascade'), nullable=False)
 	utn = relationship(UTN, backref='witnesses')
 	url = Column(UnicodeText, nullable=False)
 	def __init__(self, url):
 		self.url = url
+Index("utn_witness_url_idx", UTNWitness.utn_id, UTNWitness.url, unique=True)
 
 class UTNLink(Base):
 	__tablename__ = 'utn_link'
 	id = Column(Integer, Sequence('utn_link_id_seq'), primary_key=True)
-	from_id = Column(Integer, ForeignKey(UTN.id), nullable=False)
-	to_id = Column(Integer, ForeignKey(UTN.id), nullable=False)
+	from_id = Column(Integer, ForeignKey(UTN.id, ondelete='cascade'), nullable=False)
+	to_id = Column(Integer, ForeignKey(UTN.id, ondelete='cascade'), nullable=False)
 	def __init__(self, _from, _to):
 		self._from = _from
 		self._to = _to
 UTNLink._from = relationship(UTN, primaryjoin=UTNLink.from_id == UTN.id, backref='links_from')
 UTNLink._to = relationship(UTN, primaryjoin=UTNLink.to_id == UTN.id, backref='links_to')
+Index("utn_link_idx", UTNLink.from_id, UTNLink.to_id, unique=True)
 
 class UTNLinkWitness(Base):
 	__tablename__ = 'utn_link_witness'
 	id = Column(Integer, Sequence('utn_link_witness_id_seq'), primary_key=True)
-	utn_link_id = Column(Integer, ForeignKey(UTNLink.id), nullable=False)
+	utn_link_id = Column(Integer, ForeignKey(UTNLink.id, ondelete='cascade'), nullable=False)
 	utn_link = relationship(UTNLink, backref='witnesses')
 	url = Column(UnicodeText, nullable=False)
 	def __init__(self, url):
 		self.url = url
+Index("utn_link_witness_idx", UTNLinkWitness.utn_link_id, UTNLinkWitness.url, unique=True)
 
 class UTNGroupMember(Base):
 	__tablename__ = 'utn_group_member'
 	id = Column(Integer, Sequence('utn_group_member_id_seq'), primary_key=True)
-	member_id = Column(Integer, ForeignKey('utn.id'), nullable=False)
-	group_id = Column(Integer, ForeignKey('utn_group.id'), nullable=False)
+	member_id = Column(Integer, ForeignKey('utn.id', ondelete='cascade'), nullable=False)
+	group_id = Column(Integer, ForeignKey('utn_group.id', ondelete='cascade'), nullable=False)
 	why = Column(UnicodeText, nullable=False)
+Index("utn_group_member_idx", UTNGroupMember.member_id, UTNGroupMember.group_id, unique=True)
 
 class UTNGroup(Base):
 	__tablename__ = 'utn_group'
 	id = Column(Integer, Sequence('utn_group_id_seq'), primary_key=True)
-	canonical_id = Column(Integer, ForeignKey(UTN.id), nullable=False)
+	canonical_id = Column(Integer, ForeignKey(UTN.id, ondelete='cascade'), nullable=False)
 	members = relationship(UTN, secondary=UTNGroupMember.__table__, backref=backref("group", uselist=False))
 	member_secs = relationship(UTNGroupMember, backref='group')
 UTNGroup.canonical = relationship(UTN, primaryjoin=UTNGroup.canonical_id == UTN.id, foreign_keys=[UTNGroup.canonical_id])
+Index("utn_group_idx", UTNGroup.canonical_id, unique=True)
+
+class UTParse(Base):
+	__tablename__ = 'ut_parse'
+	id = Column(Integer, Sequence('ut_parse_id_seq'), primary_key=True)
+	url = Column(UnicodeText, nullable=False)
+	type = Column(Enum('RECENT', 'CIRCLE_LIST_LIST', 'CIRCLE_LIST', 'CIRCLE_ALBUM_LIST_LIST', 'CIRCLE_ALBUM_LIST', 'EVENT_LIST', 'EVENT', 'CIRCLE', 'ALBUM', name='utn_type_enum'), nullable=False)
+	status = Column(Boolean, nullable=False)
+	def __init__(self, url, type, status=False):
+		self.url = url
+		self.type = type
+		self.status = status
+Index("ut_parse_idx", UTParse.url, UTParse.type, unique=True)
+
 
 Base.metadata.bind = create_engine('postgresql+psycopg2:///touhou_meta', echo=False)
 Base.metadata.create_all()
